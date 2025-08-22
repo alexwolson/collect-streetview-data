@@ -7,6 +7,7 @@ import os
 import json
 from streetlevel.streetview import find_panorama
 from .load_boundary import load_toronto_boundary, get_boundary_centerpoint
+from .logging_config import setup_logging, print_header, print_success, print_error, print_info, print_warning, console
 
 
 def get_panorama_data(panorama):
@@ -177,38 +178,38 @@ def save_panorama_data(panorama, output_dir="output"):
                         processed_data[key] = str(value)
                         
             except Exception as e:
-                print(f"Warning: Error processing attribute '{key}': {e}")
+                print_warning(f"Error processing attribute '{key}': {e}")
                 processed_data[key] = str(value)
         
         output_file = os.path.join(output_dir, "toronto_streetview_panorama.json")
         with open(output_file, 'w') as f:
             json.dump(processed_data, f, indent=2, default=str)
         
-        print(f"Panorama data saved to: {output_file}")
-        print(f"\nSaved {len(processed_data)} attributes:")
+        print_success(f"Panorama data saved to: {output_file}")
+        print_info(f"Saved {len(processed_data)} attributes:")
         for key in sorted(processed_data.keys()):
             value = processed_data[key]
             if isinstance(value, (list, dict)):
-                print(f"  {key}: {type(value).__name__} with {len(value)} items")
+                print_info(f"  {key}: {type(value).__name__} with {len(value)} items")
             else:
-                print(f"  {key}: {type(value).__name__}")
+                print_info(f"  {key}: {type(value).__name__}")
         
         if 'neighbors' in processed_data:
             neighbors = processed_data['neighbors']
-            print(f"\n🔗 Neighbors: {len(neighbors) if isinstance(neighbors, list) else 'N/A'} items")
+            print_info(f"🔗 Neighbors: {len(neighbors) if isinstance(neighbors, list) else 'N/A'} items")
             if isinstance(neighbors, list) and len(neighbors) > 0:
-                print(f"   First neighbor: {neighbors[0]}")
+                print_info(f"   First neighbor: {neighbors[0]}")
         
         if 'links' in processed_data:
             links = processed_data['links']
-            print(f"🔗 Links: {len(links) if isinstance(links, list) else 'N/A'} items")
+            print_info(f"🔗 Links: {len(links) if isinstance(links, list) else 'N/A'} items")
             if isinstance(links, list) and len(links) > 0:
-                print(f"   First link: {links[0]}")
+                print_info(f"   First link: {links[0]}")
         
         return output_file
         
     except Exception as e:
-        print(f"Error saving panorama data: {e}")
+        print_error(f"Error saving panorama data: {e}")
         import traceback
         traceback.print_exc()
         return None
@@ -216,48 +217,50 @@ def save_panorama_data(panorama, output_dir="output"):
 
 def main():
     """Main function for command-line usage."""
-    print("Toronto Street View Panorama Getter")
-    print("=" * 40)
+    # Setup logging
+    logger = setup_logging()
+    
+    print_header("Toronto Street View Panorama Getter", "Find and save panorama data from Toronto's centerpoint")
     
     # Load Toronto boundary
-    print("Loading Toronto boundary...")
+    print_info("Loading Toronto boundary...")
     boundary_gdf = load_toronto_boundary()
     
     if boundary_gdf is None:
-        print("❌ Failed to load boundary data")
+        print_error("Failed to load boundary data")
         return 1
     
-    print("✅ Boundary loaded successfully")
+    print_success("Boundary loaded successfully")
     
     # Get centerpoint
     centerpoint = get_boundary_centerpoint(boundary_gdf)
     if centerpoint is None:
-        print("❌ Failed to calculate centerpoint")
+        print_error("Failed to calculate centerpoint")
         return 1
     
     lat, lon = centerpoint
-    print(f"📍 Centerpoint: {lat:.6f}, {lon:.6f}")
+    print_info(f"📍 Centerpoint: {lat:.6f}, {lon:.6f}")
     
     # Find panorama
-    print("🔍 Searching for Street View panorama...")
+    print_info("🔍 Searching for Street View panorama...")
     panorama = find_panorama(lat=lat, lon=lon, radius=50)
     
     if panorama is None:
-        print("❌ No panorama found at centerpoint")
+        print_error("No panorama found at centerpoint")
         return 1
     
-    print(f"✅ Found panorama: {panorama.id}")
-    print(f"   Location: {panorama.lat:.6f}, {panorama.lon:.6f}")
-    print(f"   Date: {panorama.date}")
+    print_success(f"Found panorama: {panorama.id}")
+    print_info(f"   Location: {panorama.lat:.6f}, {panorama.lon:.6f}")
+    print_info(f"   Date: {panorama.date}")
     
     # Save panorama data
-    print("\n💾 Saving panorama data...")
+    print_info("💾 Saving panorama data...")
     output_file = save_panorama_data(panorama)
     
     if output_file:
-        print(f"✅ Panorama data saved to: {output_file}")
+        print_success(f"Panorama data saved to: {output_file}")
     else:
-        print("❌ Failed to save panorama data")
+        print_error("Failed to save panorama data")
         return 1
     
     return 0

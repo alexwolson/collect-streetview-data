@@ -4,3 +4,5 @@ matplotlib
 shapely
 pyproj
 fiona
+streetlevel
+rich
