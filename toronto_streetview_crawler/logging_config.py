@@ -70,8 +70,7 @@ def print_panorama_stats(conn):
         total = conn.execute("SELECT COUNT(*) FROM panoramas").fetchone()[0]
         populated = conn.execute("SELECT COUNT(*) FROM panoramas WHERE metadata_populated = 1").fetchone()[0]
         within_boundary = conn.execute("SELECT COUNT(*) FROM panoramas WHERE within_boundary = 1").fetchone()[0]
-        neighbors = conn.execute("SELECT COUNT(*) FROM neighbors").fetchone()[0]
-        links = conn.execute("SELECT COUNT(*) FROM links").fetchone()[0]
+        expanded = conn.execute("SELECT COUNT(*) FROM panoramas WHERE neighbors_expanded = 1").fetchone()[0]
         
         table = Table(title="Database Statistics", show_header=True, header_style="bold magenta")
         table.add_column("Metric", style="cyan")
@@ -81,12 +80,11 @@ def print_panorama_stats(conn):
         table.add_row("Total Panoramas", str(total), "100%")
         table.add_row("Metadata Populated", str(populated), f"{(populated/total*100):.1f}%" if total > 0 else "0%")
         table.add_row("Within Boundary", str(within_boundary), f"{(within_boundary/total*100):.1f}%" if total > 0 else "0%")
-        table.add_row("Neighbor Edges", str(neighbors), "")
-        table.add_row("Link Edges", str(links), "")
+        table.add_row("Neighbors Expanded", str(expanded), f"{(expanded/total*100):.1f}%" if total > 0 else "0%")
         
         console.print(table)
         
-        return total, populated, within_boundary, neighbors, links
+        return total, populated, within_boundary, expanded
     except Exception as e:
         console.print(f"Error getting stats: {e}", style="red")
-        return 0, 0, 0, 0, 0
+        return 0, 0, 0, 0
