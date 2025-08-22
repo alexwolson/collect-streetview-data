@@ -379,9 +379,12 @@ def main():
             cursor = conn.execute("""
                 SELECT id, lat, lon, within_boundary
                 FROM panoramas
-                WHERE (metadata_populated = 0 OR (within_boundary = 1 AND neighbors_expanded = 0))
-                  AND id NOT IN (SELECT id FROM skipped_run_ids)
-                ORDER BY within_boundary DESC, created_at ASC
+                WHERE id NOT IN (SELECT id FROM skipped_run_ids)
+                  AND (
+                        within_boundary IS NULL
+                        OR (within_boundary = 1 AND (metadata_populated = 0 OR neighbors_expanded = 0))
+                      )
+                ORDER BY created_at DESC, updated_at DESC
                 LIMIT 1
             """)
             row = cursor.fetchone()
@@ -400,6 +403,14 @@ def main():
                 conn.execute("UPDATE panoramas SET within_boundary = ?, updated_at = ? WHERE id = ?",
                             (within_boundary_flag, now, pano_id))
                 conn.commit()
+                # If outside boundary, skip for this run
+                if within_boundary_flag == 0:
+                    try:
+                        conn.execute("INSERT OR IGNORE INTO skipped_run_ids (id) VALUES (?)", (pano_id,))
+                        conn.commit()
+                    except Exception:
+                        pass
+                    continue
 
             # Load panorama metadata if not already populated
             if conn.execute("SELECT metadata_populated FROM panoramas WHERE id = ?", (pano_id,)).fetchone()[0] == 0:
