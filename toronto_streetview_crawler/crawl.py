@@ -306,16 +306,13 @@ def main():
                         conn.commit()
                         # print_success(f"Metadata populated for {pano_id}")
                     else:
-                        print_warning(f"Could not retrieve panorama {pano_id} by ID. Marking as populated to avoid retries.")
-                        conn.execute("UPDATE panoramas SET metadata_populated = 1, updated_at = ? WHERE id = ?",
-                                    (datetime.utcnow().isoformat(), pano_id))
-                        conn.commit()
+                        print_warning(f"Could not retrieve panorama {pano_id} by ID. Skipping for this run.")
+                        # Don't mark as permanently populated, just skip for this run
+                        continue
                 except Exception as e:
                     print_error(f"Error populating metadata for {pano_id}: {e}")
-                    # Mark as populated to avoid infinite retries on persistent errors
-                    conn.execute("UPDATE panoramas SET metadata_populated = 1, updated_at = ? WHERE id = ?",
-                                (datetime.utcnow().isoformat(), pano_id))
-                    conn.commit()
+                    # Don't mark as permanently populated, just skip for this run
+                    continue
                     
             # Only expand neighbors if the panorama is within the boundary and hasn't been expanded
             if within_boundary_flag == 1 and conn.execute("SELECT neighbors_expanded FROM panoramas WHERE id = ?", (pano_id,)).fetchone()[0] == 0:
@@ -327,17 +324,13 @@ def main():
                         conn.commit()
                         # print_info(f"Added {new_neighbors} new neighbors for {pano_id}")
                     else:
-                        print_warning(f"Could not retrieve panorama {pano_id} for expansion. Marking as expanded to avoid retries.")
-                        # Mark as expanded to avoid infinite retries
-                        conn.execute("UPDATE panoramas SET neighbors_expanded = 1, updated_at = ? WHERE id = ?",
-                                    (datetime.utcnow().isoformat(), pano_id))
-                        conn.commit()
+                        print_warning(f"Could not retrieve panorama {pano_id} for expansion. Skipping for this run.")
+                        # Don't mark as permanently expanded, just skip for this run
+                        continue
                 except Exception as e:
                     print_error(f"Error expanding from {pano_id}: {e}")
-                    # Mark as expanded to avoid infinite retries on persistent errors
-                    conn.execute("UPDATE panoramas SET neighbors_expanded = 1, updated_at = ? WHERE id = ?",
-                                (datetime.utcnow().isoformat(), pano_id))
-                    conn.commit()
+                    # Don't mark as permanently expanded, just skip for this run
+                    continue
             
             processed_count += 1
             
