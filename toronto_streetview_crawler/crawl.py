@@ -210,6 +210,14 @@ def main():
     conn = sqlite3.connect(args.db)
     init_db(conn)
 
+    # Per-run skip tracking (temp table lives only for this connection/run)
+    try:
+        conn.execute("CREATE TEMP TABLE IF NOT EXISTS skipped_run_ids (id TEXT PRIMARY KEY)")
+        conn.execute("DELETE FROM skipped_run_ids")
+        conn.commit()
+    except Exception as e:
+        print_warning(f"Could not initialize per-run skip table: {e}")
+
     boundary_gdf = load_toronto_boundary()
     if boundary_gdf is None:
         print_error("Failed to load boundary data. Exiting.")
@@ -272,7 +280,8 @@ def main():
             cursor = conn.execute("""
                 SELECT id, lat, lon, within_boundary
                 FROM panoramas
-                WHERE metadata_populated = 0 OR (within_boundary = 1 AND neighbors_expanded = 0)
+                WHERE (metadata_populated = 0 OR (within_boundary = 1 AND neighbors_expanded = 0))
+                  AND id NOT IN (SELECT id FROM skipped_run_ids)
                 ORDER BY within_boundary DESC, created_at ASC
                 LIMIT 1
             """)
@@ -307,11 +316,19 @@ def main():
                         # print_success(f"Metadata populated for {pano_id}")
                     else:
                         print_warning(f"Could not retrieve panorama {pano_id} by ID. Skipping for this run.")
-                        # Don't mark as permanently populated, just skip for this run
+                        try:
+                            conn.execute("INSERT OR IGNORE INTO skipped_run_ids (id) VALUES (?)", (pano_id,))
+                            conn.commit()
+                        except Exception as e2:
+                            print_warning(f"Could not record skip for this run: {e2}")
                         continue
                 except Exception as e:
                     print_error(f"Error populating metadata for {pano_id}: {e}")
-                    # Don't mark as permanently populated, just skip for this run
+                    try:
+                        conn.execute("INSERT OR IGNORE INTO skipped_run_ids (id) VALUES (?)", (pano_id,))
+                        conn.commit()
+                    except Exception as e2:
+                        print_warning(f"Could not record skip for this run: {e2}")
                     continue
                     
             # Only expand neighbors if the panorama is within the boundary and hasn't been expanded
@@ -325,11 +342,19 @@ def main():
                         # print_info(f"Added {new_neighbors} new neighbors for {pano_id}")
                     else:
                         print_warning(f"Could not retrieve panorama {pano_id} for expansion. Skipping for this run.")
-                        # Don't mark as permanently expanded, just skip for this run
+                        try:
+                            conn.execute("INSERT OR IGNORE INTO skipped_run_ids (id) VALUES (?)", (pano_id,))
+                            conn.commit()
+                        except Exception as e2:
+                            print_warning(f"Could not record skip for this run: {e2}")
                         continue
                 except Exception as e:
                     print_error(f"Error expanding from {pano_id}: {e}")
-                    # Don't mark as permanently expanded, just skip for this run
+                    try:
+                        conn.execute("INSERT OR IGNORE INTO skipped_run_ids (id) VALUES (?)", (pano_id,))
+                        conn.commit()
+                    except Exception as e2:
+                        print_warning(f"Could not record skip for this run: {e2}")
                     continue
             
             processed_count += 1
