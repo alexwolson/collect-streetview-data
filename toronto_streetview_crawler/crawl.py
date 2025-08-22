@@ -150,8 +150,6 @@ def save_panorama_metadata_to_db(conn, panorama):
         SET lat = ?, lon = ?, updated_at = ?
         WHERE id = ?
     """, (panorama.lat, panorama.lon, now, panorama.id))
-    
-    # print_info(f"Metadata extracted for {panorama.id}: {len(metadata)} fields")
 
 
 def get_db_stats(conn):
@@ -193,6 +191,75 @@ def expand_panorama_neighbors(conn, panorama, boundary_polygon):
     return new_neighbors_count
 
 
+# ===== ASCII DENSITY MAP RENDERING =====
+
+def render_ascii_density_map(conn, bounds, cols=80, rows=30):
+    """Render an ASCII density map of panoramas within boundary bounds.
+    bounds: (minx, miny, maxx, maxy)
+    """
+    minx, miny, maxx, maxy = bounds
+    if maxx - minx <= 0 or maxy - miny <= 0:
+        print_warning("Invalid boundary bounds for density map")
+        return
+    
+    # Fetch all in-boundary points (lat, lon)
+    try:
+        rows_data = conn.execute("SELECT lat, lon FROM panoramas WHERE within_boundary = 1").fetchall()
+    except Exception as e:
+        print_warning(f"Could not query panoramas for density map: {e}")
+        return
+    
+    if not rows_data:
+        print_info("No panoramas available for density map yet")
+        return
+    
+    # Build grid
+    grid = [[0 for _ in range(cols)] for _ in range(rows)]
+    for lat, lon in rows_data:
+        try:
+            if lon is None or lat is None:
+                continue
+            x = int((float(lon) - minx) / (maxx - minx) * (cols - 1))
+            y = int((maxy - float(lat)) / (maxy - miny) * (rows - 1))  # invert y so north is up
+            if 0 <= x < cols and 0 <= y < rows:
+                grid[y][x] += 1
+        except Exception:
+            continue
+    
+    # Determine density levels
+    max_count = max((max(row) for row in grid), default=0)
+    if max_count == 0:
+        print_info("Panorama density is zero across the map")
+        return
+    
+    # Shades and colors by level
+    shades = [' ', '·', ':', '-', '=', '+', '*', '#', '%', '█']
+    colors = ['grey37', 'grey53', 'dark_sea_green4', 'green4', 'chartreuse3', 'yellow3', 'dark_orange3', 'orange_red1', 'red3', 'deep_pink3']
+    levels = len(shades)
+    
+    # Render
+    from rich.text import Text
+    from rich.panel import Panel
+    lines = []
+    for y in range(rows):
+        line = Text()
+        for x in range(cols):
+            count = grid[y][x]
+            level = int(count / max_count * (levels - 1)) if max_count > 0 else 0
+            ch = shades[level]
+            color = colors[level]
+            line.append(ch, style=color)
+        lines.append(line)
+    
+    map_text = Text()
+    for t in lines:
+        map_text.append(t)
+        map_text.append('\n')
+    
+    panel = Panel(map_text, title=f"Panorama Density (max cell: {max_count})", border_style="cyan")
+    console.print(panel)
+
+
 def main():
     """Main function for command-line usage."""
     # Setup logging
@@ -203,6 +270,10 @@ def main():
     parser.add_argument("--max-new", type=int, default=50, help="Maximum number of new panoramas to process in one run.")
     parser.add_argument("--radius", type=int, default=50, help="Initial search radius for the starting panorama.")
     parser.add_argument("--extra-radii", type=str, default="100,200", help="Comma-separated list of additional radii to try if initial search fails.")
+    # ASCII density map options
+    parser.add_argument("--ascii-interval", type=int, default=0, help="Render ASCII density map every N processed panoramas (0=disabled).")
+    parser.add_argument("--ascii-cols", type=int, default=80, help="ASCII map width (columns).")
+    parser.add_argument("--ascii-rows", type=int, default=30, help="ASCII map height (rows).")
     args = parser.parse_args()
 
     print_header("Toronto Street View Crawler", f"DB: {args.db} | Max New: {args.max_new} | Radii: {[args.radius] + [int(r) for r in args.extra_radii.split(',') if r]}")
@@ -225,6 +296,7 @@ def main():
     
     # Combine all geometries into a single polygon for efficient checking
     boundary_polygon = boundary_gdf.geometry.unary_union
+    bounds = tuple(boundary_gdf.total_bounds)  # (minx, miny, maxx, maxy)
 
     # Seed the crawl if the database is empty
     if conn.execute("SELECT COUNT(*) FROM panoramas").fetchone()[0] == 0:
@@ -301,7 +373,6 @@ def main():
                 conn.execute("UPDATE panoramas SET within_boundary = ?, updated_at = ? WHERE id = ?",
                             (within_boundary_flag, now, pano_id))
                 conn.commit()
-                print_info(f"Checked boundary for {pano_id}: within_boundary={within_boundary_flag}")
 
             # Load panorama metadata if not already populated
             if conn.execute("SELECT metadata_populated FROM panoramas WHERE id = ?", (pano_id,)).fetchone()[0] == 0:
@@ -313,7 +384,6 @@ def main():
                         conn.execute("UPDATE panoramas SET metadata_populated = 1, updated_at = ? WHERE id = ?",
                                     (datetime.utcnow().isoformat(), pano_id))
                         conn.commit()
-                        # print_success(f"Metadata populated for {pano_id}")
                     else:
                         print_warning(f"Could not retrieve panorama {pano_id} by ID. Skipping for this run.")
                         try:
@@ -339,7 +409,6 @@ def main():
                     if panorama:
                         new_neighbors = expand_panorama_neighbors(conn, panorama, boundary_polygon)
                         conn.commit()
-                        # print_info(f"Added {new_neighbors} new neighbors for {pano_id}")
                     else:
                         print_warning(f"Could not retrieve panorama {pano_id} for expansion. Skipping for this run.")
                         try:
@@ -367,15 +436,25 @@ def main():
                 completed=processed_count
             )
             
-            # # Show statistics every 10 panoramas
-            # if processed_count % 10 == 0:
-            #     print_panorama_stats(conn)
+            # Periodic ASCII density map
+            if args.ascii_interval and processed_count % args.ascii_interval == 0:
+                try:
+                    render_ascii_density_map(conn, bounds, cols=args.ascii_cols, rows=args.ascii_rows)
+                except Exception as e:
+                    print_warning(f"Failed to render ASCII density map: {e}")
 
     # Final statistics
     elapsed_time = time.time() - start_time
     print_success(f"Crawling complete! Processed {processed_count} panoramas in {elapsed_time:.1f} seconds")
     print_panorama_stats(conn)
     
+    # Final ASCII density map if requested but not shown due to interval misalignment
+    if args.ascii_interval and processed_count % args.ascii_interval != 0:
+        try:
+            render_ascii_density_map(conn, bounds, cols=args.ascii_cols, rows=args.ascii_rows)
+        except Exception as e:
+            print_warning(f"Failed to render ASCII density map: {e}")
+
     conn.close()
 
 
