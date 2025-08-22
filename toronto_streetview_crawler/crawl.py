@@ -151,7 +151,7 @@ def save_panorama_metadata_to_db(conn, panorama):
         WHERE id = ?
     """, (panorama.lat, panorama.lon, now, panorama.id))
     
-    print_info(f"Metadata extracted for {panorama.id}: {len(metadata)} fields")
+    # print_info(f"Metadata extracted for {panorama.id}: {len(metadata)} fields")
 
 
 def get_db_stats(conn):
@@ -296,7 +296,7 @@ def main():
 
             # Load panorama metadata if not already populated
             if conn.execute("SELECT metadata_populated FROM panoramas WHERE id = ?", (pano_id,)).fetchone()[0] == 0:
-                print_info(f"Populating metadata for {pano_id}...")
+                # print_info(f"Populating metadata for {pano_id}...")
                 try:
                     panorama = find_panorama_by_id(pano_id)
                     if panorama:
@@ -319,13 +319,13 @@ def main():
                     
             # Only expand neighbors if the panorama is within the boundary and hasn't been expanded
             if within_boundary_flag == 1 and conn.execute("SELECT neighbors_expanded FROM panoramas WHERE id = ?", (pano_id,)).fetchone()[0] == 0:
-                print_info(f"Expanding from {pano_id} (within boundary)...")
+                # print_info(f"Expanding from {pano_id} (within boundary)...")
                 try:
                     panorama = find_panorama_by_id(pano_id) # Re-fetch if not already in memory
                     if panorama:
                         new_neighbors = expand_panorama_neighbors(conn, panorama, boundary_polygon)
                         conn.commit()
-                        print_info(f"Added {new_neighbors} new neighbors for {pano_id}")
+                        # print_info(f"Added {new_neighbors} new neighbors for {pano_id}")
                     else:
                         print_warning(f"Could not retrieve panorama {pano_id} for expansion.")
                 except Exception as e:
