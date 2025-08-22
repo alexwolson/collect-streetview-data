@@ -341,9 +341,9 @@ def main():
                 completed=processed_count
             )
             
-            # Show statistics every 10 panoramas
-            if processed_count % 10 == 0:
-                print_panorama_stats(conn)
+            # # Show statistics every 10 panoramas
+            # if processed_count % 10 == 0:
+            #     print_panorama_stats(conn)
 
     # Final statistics
     elapsed_time = time.time() - start_time
