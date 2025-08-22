@@ -193,9 +193,10 @@ def expand_panorama_neighbors(conn, panorama, boundary_polygon):
 
 # ===== ASCII DENSITY MAP RENDERING =====
 
-def render_ascii_density_map(conn, bounds, cols=80, rows=30):
-    """Render an ASCII density map of panoramas within boundary bounds.
+def render_ascii_density_map(conn, bounds, boundary_geom, cols=80, rows=30):
+    """Render an ASCII density map of panoramas with Toronto boundary outline.
     bounds: (minx, miny, maxx, maxy)
+    boundary_geom: shapely geometry for the city boundary (polygon or multipolygon)
     """
     minx, miny, maxx, maxy = bounds
     if maxx - minx <= 0 or maxy - miny <= 0:
@@ -213,7 +214,7 @@ def render_ascii_density_map(conn, bounds, cols=80, rows=30):
         print_info("No panoramas available for density map yet")
         return
     
-    # Build grid
+    # Build density grid
     grid = [[0 for _ in range(cols)] for _ in range(rows)]
     for lat, lon in rows_data:
         try:
@@ -232,6 +233,28 @@ def render_ascii_density_map(conn, bounds, cols=80, rows=30):
         print_info("Panorama density is zero across the map")
         return
     
+    # Precompute boundary mask by distance from cell center to boundary
+    try:
+        boundary_line = boundary_geom.boundary
+    except Exception:
+        boundary_line = None
+    boundary_mask = [[False for _ in range(cols)] for _ in range(rows)]
+    if boundary_line is not None:
+        dx = (maxx - minx) / cols
+        dy = (maxy - miny) / rows
+        # Threshold ~ 0.6 of cell diagonal in degrees
+        threshold = 0.6 * max(dx, dy)
+        for y in range(rows):
+            lat_center = maxy - (y + 0.5) * dy
+            for x in range(cols):
+                lon_center = minx + (x + 0.5) * dx
+                try:
+                    d = boundary_line.distance(Point(lon_center, lat_center))
+                    if d <= threshold:
+                        boundary_mask[y][x] = True
+                except Exception:
+                    pass
+    
     # Shades and colors by level
     shades = [' ', '·', ':', '-', '=', '+', '*', '#', '%', '█']
     colors = ['grey37', 'grey53', 'dark_sea_green4', 'green4', 'chartreuse3', 'yellow3', 'dark_orange3', 'orange_red1', 'red3', 'deep_pink3']
@@ -244,6 +267,10 @@ def render_ascii_density_map(conn, bounds, cols=80, rows=30):
     for y in range(rows):
         line = Text()
         for x in range(cols):
+            if boundary_mask[y][x]:
+                # Draw boundary outline on top
+                line.append('•', style='cyan')
+                continue
             count = grid[y][x]
             level = int(count / max_count * (levels - 1)) if max_count > 0 else 0
             ch = shades[level]
@@ -439,7 +466,7 @@ def main():
             # Periodic ASCII density map
             if args.ascii_interval and processed_count % args.ascii_interval == 0:
                 try:
-                    render_ascii_density_map(conn, bounds, cols=args.ascii_cols, rows=args.ascii_rows)
+                    render_ascii_density_map(conn, bounds, boundary_polygon, cols=args.ascii_cols, rows=args.ascii_rows)
                 except Exception as e:
                     print_warning(f"Failed to render ASCII density map: {e}")
 
@@ -451,7 +478,7 @@ def main():
     # Final ASCII density map if requested but not shown due to interval misalignment
     if args.ascii_interval and processed_count % args.ascii_interval != 0:
         try:
-            render_ascii_density_map(conn, bounds, cols=args.ascii_cols, rows=args.ascii_rows)
+            render_ascii_density_map(conn, bounds, boundary_polygon, cols=args.ascii_cols, rows=args.ascii_rows)
         except Exception as e:
             print_warning(f"Failed to render ASCII density map: {e}")
 
