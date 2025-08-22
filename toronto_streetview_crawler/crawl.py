@@ -327,9 +327,17 @@ def main():
                         conn.commit()
                         # print_info(f"Added {new_neighbors} new neighbors for {pano_id}")
                     else:
-                        print_warning(f"Could not retrieve panorama {pano_id} for expansion.")
+                        print_warning(f"Could not retrieve panorama {pano_id} for expansion. Marking as expanded to avoid retries.")
+                        # Mark as expanded to avoid infinite retries
+                        conn.execute("UPDATE panoramas SET neighbors_expanded = 1, updated_at = ? WHERE id = ?",
+                                    (datetime.utcnow().isoformat(), pano_id))
+                        conn.commit()
                 except Exception as e:
                     print_error(f"Error expanding from {pano_id}: {e}")
+                    # Mark as expanded to avoid infinite retries on persistent errors
+                    conn.execute("UPDATE panoramas SET neighbors_expanded = 1, updated_at = ? WHERE id = ?",
+                                (datetime.utcnow().isoformat(), pano_id))
+                    conn.commit()
             
             processed_count += 1
             
